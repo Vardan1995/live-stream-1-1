@@ -20,6 +20,19 @@ enableAudioButton.addEventListener("click", enableAudio);
 
 socket.on("offer", (id, description) => {
   peerConnection = new RTCPeerConnection(config);
+  const channel = peerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
+  channel.onopen = function (event) {
+    const controller = new Controller(channel)
+    window.addEventListener("keydown", ({ key, repeat }) => {
+      if (repeat) return
+      controller[key]?.()
+    })
+    window.addEventListener("keyup", ({ key }) => {
+      if (controller[key]) {
+        controller.Stop()
+      }
+    })
+  }
   peerConnection
     .setRemoteDescription(description)
     .then(() => peerConnection.createAnswer())
@@ -59,4 +72,29 @@ window.onunload = window.onbeforeunload = () => {
 function enableAudio() {
   console.log("Enabling audio");
   video.muted = false;
+}
+
+class Controller {
+  constructor(channel) {
+    this.channel = channel
+  }
+  #send(name) {
+    this.channel.send(name)
+  }
+
+  ArrowLeft() {
+    this.#send('left');
+  }
+  ArrowRight() {
+    this.#send('right');
+  }
+  ArrowUp() {
+    this.#send('up');
+  }
+  ArrowDown() {
+    this.#send('down');
+  }
+  Stop() {
+    this.#send('stop');
+  }
 }

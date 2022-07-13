@@ -20,6 +20,12 @@ socket.on("answer", (id, description) => {
 
 socket.on("watcher", (id) => {
   const peerConnection = new RTCPeerConnection(config);
+
+  const channel = peerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
+  channel.onmessage = function (event) {
+    document.getElementById("ev").innerText = event.data
+  }
+
   peerConnections[id] = peerConnection;
 
   let stream = videoElement.srcObject;
