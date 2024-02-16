@@ -1,116 +1,178 @@
-const peerConnections = {};
-const config = {
-  iceServers: [
-    {
-      urls: "stun:stun.l.google.com:19302",
-    },
-    // {
-    //   "urls": "turn:TURN_IP?transport=tcp",
-    //   "username": "TURN_USERNAME",
-    //   "credential": "TURN_CREDENTIALS"
-    // }
-  ],
-};
-
+// Constants and configurations
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  // Additional ICE servers can be added here
+];
+const PEER_CONNECTION_CONFIG = { iceServers: ICE_SERVERS };
 const socket = io.connect(window.location.origin);
 
-socket.on("answer", (id, description) => {
-  peerConnections[id].setRemoteDescription(description);
-});
+// DOM elements
+const videoElement = document.querySelector("video");
+const audioSourceSelect = document.querySelector("select#audioSource");
+const videoSourceSelect = document.querySelector("select#videoSource");
 
-socket.on("watcher", (id) => {
-  const peerConnection = new RTCPeerConnection(config);
+// State management
+let peerConnections = {};
+let localStream = null;
+let zoomLevel = 1;
+
+// Socket event handlers
+function setupSocketListeners() {
+  socket.on("answer", handleAnswer);
+  socket.on("watcher", handleNewWatcher);
+  socket.on("candidate", handleNewICECandidate);
+  socket.on("disconnectPeer", handlePeerDisconnect);
+  window.onunload = window.onbeforeunload = handleWindowUnload;
+}
+
+async function initializeMedia() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    videoElement.srcObject = stream;
+    localStream = stream;
+    socket.emit("broadcaster");
+    await enumerateDevices();
+  } catch (error) {
+    console.error("Error initializing media: ", error);
+  }
+}
+
+async function enumerateDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  populateDeviceSelection(devices, audioSourceSelect, 'audioinput');
+  populateDeviceSelection(devices, videoSourceSelect, 'videoinput');
+}
+
+function populateDeviceSelection(devices, selectElement, kind) {
+  devices.forEach((device) => {
+    if (device.kind === kind) {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.text = device.label || `${kind} ${selectElement.length + 1}`;
+      selectElement.appendChild(option);
+    }
+  });
+}
+
+function handleNewWatcher(id) {
+  const peerConnection = new RTCPeerConnection(PEER_CONNECTION_CONFIG);
   peerConnections[id] = peerConnection;
 
-  let stream = videoElement.srcObject;
-  stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+  setupPeerConnection(peerConnection, id);
+  addLocalTracksToPeerConnection(peerConnection);
+  createAndSendOffer(peerConnection, id);
+}
+
+function setupPeerConnection(peerConnection, id) {
+  const dataChannel = peerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
+  dataChannel.onmessage = (event) => {
+    document.getElementById("ev").innerText = event.data;
+    adjustZoom(event.data);
+  };
 
   peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       socket.emit("candidate", id, event.candidate);
     }
   };
+}
 
-  peerConnection
-    .createOffer()
-    .then((sdp) => peerConnection.setLocalDescription(sdp))
-    .then(() => {
-      socket.emit("offer", id, peerConnection.localDescription);
-    });
-});
+function addLocalTracksToPeerConnection(peerConnection) {
+  localStream.getTracks().forEach((track) => {
+    peerConnection.addTrack(track, localStream);
+  });
+}
 
-socket.on("candidate", (id, candidate) => {
-  peerConnections[id].addIceCandidate(new RTCIceCandidate(candidate));
-});
+async function createAndSendOffer(peerConnection, id) {
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+  socket.emit("offer", id, offer);
+}
 
-socket.on("disconnectPeer", (id) => {
-  peerConnections[id].close();
-  delete peerConnections[id];
-});
+function handleAnswer(id, description) {
+  const peerConnection = peerConnections[id];
+  peerConnection.setRemoteDescription(description);
+}
 
-window.onunload = window.onbeforeunload = () => {
+function handleNewICECandidate(id, candidate) {
+  const peerConnection = peerConnections[id];
+  peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+}
+
+function handlePeerDisconnect(id) {
+  if (peerConnections[id]) {
+    peerConnections[id].close();
+    delete peerConnections[id];
+  }
+}
+
+function handleWindowUnload() {
   socket.close();
-};
-
-// Get camera and microphone
-const videoElement = document.querySelector("video");
-const audioSelect = document.querySelector("select#audioSource");
-const videoSelect = document.querySelector("select#videoSource");
-
-audioSelect.onchange = getStream;
-videoSelect.onchange = getStream;
-
-getStream().then(getDevices).then(gotDevices);
-
-function getDevices() {
-  return navigator.mediaDevices.enumerateDevices();
 }
 
-function gotDevices(deviceInfos) {
-  window.deviceInfos = deviceInfos;
-  for (const deviceInfo of deviceInfos) {
-    const option = document.createElement("option");
-    option.value = deviceInfo.deviceId;
-    if (deviceInfo.kind === "audioinput") {
-      option.text = deviceInfo.label || `Microphone ${audioSelect.length + 1}`;
-      audioSelect.appendChild(option);
-    } else if (deviceInfo.kind === "videoinput") {
-      option.text = deviceInfo.label || `Camera ${videoSelect.length + 1}`;
-      videoSelect.appendChild(option);
-    }
+function adjustZoom(action) {
+  const videoTrack = localStream.getVideoTracks()[0];
+  const capabilities = videoTrack.getCapabilities();
+
+  // Check if zoom is supported
+  if (!capabilities || !capabilities.zoom) {
+    console.error('Zoom is not supported by', videoTrack.label);
+    return;
   }
+
+  if (action === "+") {
+    zoomLevel = Math.min(zoomLevel + 1, capabilities.zoom.max);
+  } else if (action === "-") {
+    zoomLevel = Math.max(zoomLevel - 1, capabilities.zoom.min);
+  }
+
+  videoTrack.applyConstraints({ advanced: [{ zoom: zoomLevel }] })
+    .catch(e => console.error('Error applying zoom constraint:', e));
 }
 
-function getStream() {
-  if (window.stream) {
-    window.stream.getTracks().forEach((track) => {
-      track.stop();
-    });
+function setupDeviceChangeListeners() {
+  audioSourceSelect.onchange = updateStream;
+  videoSourceSelect.onchange = updateStream;
+}
+
+async function updateStream() {
+  if (localStream) {
+    // Stop all current tracks before switching to new sources
+    localStream.getTracks().forEach(track => track.stop());
   }
-  const audioSource = audioSelect.value;
-  const videoSource = videoSelect.value;
+
+  const audioSource = audioSourceSelect.value;
+  const videoSource = videoSourceSelect.value;
   const constraints = {
-    audio: { deviceId: audioSource ? { exact: audioSource } : undefined },//todo
-    video: { deviceId: videoSource ? { exact: videoSource } : undefined },
+    audio: { deviceId: audioSource ? { exact: audioSource } : undefined },
+    video: { deviceId: videoSource ? { exact: videoSource } : undefined }
   };
-  return navigator.mediaDevices
-    .getUserMedia(constraints)
-    .then(gotStream)
-    .catch(handleError);
+
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    localStream = newStream;
+    videoElement.srcObject = newStream;
+
+    // Replace tracks in all peer connections
+    Object.values(peerConnections).forEach(peerConnection => {
+      const senders = peerConnection.getSenders();
+      newStream.getTracks().forEach(newTrack => {
+        const sender = senders.find(sender => sender.track.kind === newTrack.kind);
+        if (sender) {
+          sender.replaceTrack(newTrack);
+        }
+      });
+    });
+
+    socket.emit("broadcaster"); // Notify the server about the stream update
+  } catch (error) {
+    console.error("Error updating the stream: ", error);
+  }
 }
 
-function gotStream(stream) {
-  window.stream = stream;
-  audioSelect.selectedIndex = [...audioSelect.options].findIndex(
-    (option) => option.text === stream.getAudioTracks()[0].label
-  );
-  videoSelect.selectedIndex = [...videoSelect.options].findIndex(
-    (option) => option.text === stream.getVideoTracks()[0].label
-  );
-  videoElement.srcObject = stream;
-  socket.emit("broadcaster");
-}
+// This function call initializes the device change listeners
+setupDeviceChangeListeners();
 
-function handleError(error) {
-  console.error("Error: ", error);
-}
+// Initialize
+setupSocketListeners();
+initializeMedia();

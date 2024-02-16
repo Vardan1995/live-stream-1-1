@@ -1,8 +1,8 @@
 const { RTCPeerConnection, RTCIceCandidate } = require('wrtc')
 const io = require("socket.io-client")
-// const { SerialPort } = require("serialport")
+const { SerialPort } = require("serialport")
 
-// const serialport = new SerialPort({ path: "COM5", baudRate: 9600 })
+const serialport = new SerialPort({ path: "COM5", baudRate: 9600 })
 
 const socket = io.connect("http://localhost:4000");
 
@@ -18,14 +18,17 @@ let lastWatcherPeerConnection
 
 
 socket.on("answer", (id, description) => {
+    console.log("controller on answer", description);
     lastWatcherPeerConnection.setRemoteDescription(description);
 });
 
 socket.on("watcher", (id) => {
+    console.log("controller on watcher");
     lastWatcherPeerConnection = new RTCPeerConnection(config);
 
     const channel = lastWatcherPeerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
     channel.onmessage = function (event) {
+        console.log("controller chat on message");
         handleAction(event.data)
     }
 
@@ -87,9 +90,9 @@ function handleAction(action) {
     const actions = Object.values(actionState).filter(a => a).map(key => actionChars[key]).join("") + '\n'
 
     console.log(actions);
-    // serialport.write(actions)
+    serialport.write(actions)
 }
 
-// serialport.on('readable', function () {// for later use
-//     console.log('Data:', serialport.read().toString())
-// })
+serialport.on('readable', function () {// for later use
+    console.log('Data:', serialport.read().toString())
+})

@@ -12,10 +12,14 @@ const config = {
   ],
 };
 
+
 const socket = io.connect(window.location.origin);
 const video = document.querySelector("video");
 const enableAudioButton = document.querySelector("#enable-audio");
 
+video.addEventListener('click', function () {
+  video.requestFullscreen()
+}, false)
 enableAudioButton.addEventListener("click", enableAudio);
 
 socket.on("offer", (id, description) => {
@@ -24,6 +28,10 @@ socket.on("offer", (id, description) => {
   channel.onopen = function (event) {
     const controller = new Controller(channel)
     window.addEventListener("keydown", ({ key, repeat }) => {
+      if (key === "+" || key === "-") {
+        controller.send(key)
+      }
+
       if (repeat) return
       controller[key]?.("-")
     })
@@ -84,20 +92,20 @@ class Controller {
   constructor(channel) {
     this.channel = channel
   }
-  #send(name) {
+  send(name) {
     this.channel.send(name)
   }
 
   ArrowLeft(down) {
-    this.#send(`${down}left`);
+    this.send(`${down}left`);
   }
   ArrowRight(down) {
-    this.#send(`${down}right`);
+    this.send(`${down}right`);
   }
   ArrowUp(down) {
-    this.#send(`${down}up`);
+    this.send(`${down}up`);
   }
   ArrowDown(down) {
-    this.#send(`${down}down`);
+    this.send(`${down}down`);
   }
 }
