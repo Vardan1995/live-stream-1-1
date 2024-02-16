@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 
 let broadcaster;
+let controller;
 const port = process.env.PORT || 4000;
 
 const http = require("http");
@@ -16,8 +17,13 @@ io.sockets.on("connection", (socket) => {
     broadcaster = socket.id;
     socket.broadcast.emit("broadcaster");
   });
+  socket.on("controller", () => {
+    controller = socket.id;
+    socket.broadcast.emit("controller");
+  });
   socket.on("watcher", () => {
     socket.to(broadcaster).emit("watcher", socket.id);
+    socket.to(controller).emit("watcher", socket.id);
   });
   socket.on("offer", (id, message) => {
     socket.to(id).emit("offer", socket.id, message);

@@ -1,4 +1,4 @@
-let peerConnection;
+let peerConnections = [];
 const config = {
   iceServers: [
     {
@@ -19,18 +19,18 @@ const enableAudioButton = document.querySelector("#enable-audio");
 enableAudioButton.addEventListener("click", enableAudio);
 
 socket.on("offer", (id, description) => {
-  peerConnection = new RTCPeerConnection(config);
+  let peerConnection = new RTCPeerConnection(config);
   const channel = peerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
   channel.onopen = function (event) {
     const controller = new Controller(channel)
     window.addEventListener("keydown", ({ key, repeat }) => {
       if (repeat) return
-      controller[key]?.()
+      controller[key]?.("-")
     })
     window.addEventListener("keyup", ({ key }) => {
-      if (controller[key]) {
-        controller.Stop()
-      }
+
+      controller[key]?.("T-")
+
     })
   }
   peerConnection
@@ -48,12 +48,16 @@ socket.on("offer", (id, description) => {
       socket.emit("candidate", id, event.candidate);
     }
   };
+  peerConnections.push(peerConnection)
 });
 
 socket.on("candidate", (id, candidate) => {
-  peerConnection
-    .addIceCandidate(new RTCIceCandidate(candidate))
-    .catch((e) => console.error(e));
+  peerConnections.forEach(peerConnection => {
+
+    peerConnection
+      .addIceCandidate(new RTCIceCandidate(candidate))
+      .catch((e) => console.error(e));
+  });
 });
 
 socket.on("connect", () => {
@@ -66,7 +70,9 @@ socket.on("broadcaster", () => {
 
 window.onunload = window.onbeforeunload = () => {
   socket.close();
-  peerConnection.close();
+  peerConnections.forEach(peerConnection => {
+    peerConnection.close();
+  })
 };
 
 function enableAudio() {
@@ -82,19 +88,16 @@ class Controller {
     this.channel.send(name)
   }
 
-  ArrowLeft() {
-    this.#send('left');
+  ArrowLeft(down) {
+    this.#send(`${down}left`);
   }
-  ArrowRight() {
-    this.#send('right');
+  ArrowRight(down) {
+    this.#send(`${down}right`);
   }
-  ArrowUp() {
-    this.#send('up');
+  ArrowUp(down) {
+    this.#send(`${down}up`);
   }
-  ArrowDown() {
-    this.#send('down');
-  }
-  Stop() {
-    this.#send('stop');
+  ArrowDown(down) {
+    this.#send(`${down}down`);
   }
 }

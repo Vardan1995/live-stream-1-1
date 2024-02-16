@@ -20,12 +20,6 @@ socket.on("answer", (id, description) => {
 
 socket.on("watcher", (id) => {
   const peerConnection = new RTCPeerConnection(config);
-
-  const channel = peerConnection.createDataChannel("chat", { negotiated: true, id: 0 });
-  channel.onmessage = function (event) {
-    document.getElementById("ev").innerText = event.data
-  }
-
   peerConnections[id] = peerConnection;
 
   let stream = videoElement.srcObject;
@@ -96,7 +90,7 @@ function getStream() {
   const audioSource = audioSelect.value;
   const videoSource = videoSelect.value;
   const constraints = {
-    // audio: { deviceId: audioSource ? { exact: audioSource } : undefined },//todo
+    audio: { deviceId: audioSource ? { exact: audioSource } : undefined },//todo
     video: { deviceId: videoSource ? { exact: videoSource } : undefined },
   };
   return navigator.mediaDevices
